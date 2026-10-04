@@ -44,8 +44,8 @@ defmodule Plausible.Stats.QueryBuilder do
       query =
         query
         |> set_time_on_page_data(site)
-        |> set_active_users_coverage()
         |> put_comparison_utc_time_range()
+        |> set_active_users_coverage()
         |> Query.put_imported_opts(site)
 
       on_ee do
@@ -158,51 +158,85 @@ defmodule Plausible.Stats.QueryBuilder do
   end
 
   @doc """
-  For dau/wau/mau queries, records per metric whether all days its windows
-  look at had persistent (non-rotating) visitor ids. Used for the
+  For dau/wau/mau queries, records per metric whether all days its reported
+  windows look at had persistent (non-rotating) visitor ids, in the main
+  range and, if compared, in the comparison range. Used for the
   `persistent_tracking_partial` metric warning.
+
+  Must run after `put_comparison_utc_time_range/1`.
   """
   def set_active_users_coverage(%Query{} = query) do
     if Plausible.Stats.SQL.ActiveUsers.active_users_query?(query) do
       periods = Plausible.Ingestion.PersistentId.Periods.list()
 
-      # Only the windows of the reported days matter (e.g. just the last day
-      # for a dashboard tile)
-      {first_reported_day, _last} =
-        Plausible.Stats.SQL.ActiveUsers.reported_day_bounds(query)
-
-      window_end =
-        Enum.min([query.utc_time_range.last, query.now], DateTime)
-
-      # Days before the site's native stats start have no data to overcount
-      native_start =
-        query.site_native_stats_start_at &&
-          DateTime.from_naive!(query.site_native_stats_start_at, "Etc/UTC")
+      comparison_query =
+        if query.comparison_utc_time_range,
+          do: Comparisons.get_comparison_query(query)
 
       coverage =
         Map.new(query.metrics, fn metric ->
-          window_days = Plausible.Stats.SQL.ActiveUsers.window_days(metric)
+          main = active_users_coverage(query, metric, periods)
 
-          first_day = Date.add(first_reported_day, -(window_days - 1))
+          comparison =
+            comparison_query && active_users_coverage(comparison_query, metric, periods)
 
-          # DateTimeRange.new! handles local midnights that fall into a DST gap
-          window_start =
-            DateTimeRange.new!(first_day, first_day, query.timezone).first
-            |> DateTime.shift_zone!("Etc/UTC")
+          coverage =
+            cond do
+              not main.covered ->
+                Map.put(main, :uncovered, :period)
 
-          window_start =
-            if native_start,
-              do: Enum.max([window_start, native_start], DateTime),
-              else: window_start
+              comparison && not comparison.covered ->
+                %{covered: false, since: comparison.since || main.since, uncovered: :comparison}
 
-          {metric,
-           Plausible.Ingestion.PersistentId.Periods.coverage(periods, window_start, window_end)}
+              true ->
+                main
+            end
+
+          {metric, coverage}
         end)
 
       struct!(query, active_users_coverage: coverage)
     else
       query
     end
+  end
+
+  # Checks each of the metric's reported windows (not the interval spanning
+  # them all) against the persistent tracking periods. `since` is that of the
+  # last window.
+  defp active_users_coverage(query, metric, periods) do
+    window_end_limit = Enum.min([query.utc_time_range.last, query.now], DateTime)
+
+    # Days before the site's native stats start have no data to overcount
+    native_start =
+      query.site_native_stats_start_at &&
+        DateTime.from_naive!(query.site_native_stats_start_at, "Etc/UTC")
+
+    query
+    |> Plausible.Stats.SQL.ActiveUsers.reported_windows(metric)
+    |> Enum.map(fn {first_day, last_day} ->
+      # DateTimeRange.new! handles local midnights that fall into a DST gap
+      range = DateTimeRange.new!(first_day, last_day, query.timezone)
+      window_start = DateTime.shift_zone!(range.first, "Etc/UTC")
+
+      window_end =
+        Enum.min([DateTime.shift_zone!(range.last, "Etc/UTC"), window_end_limit], DateTime)
+
+      window_start =
+        if native_start,
+          do: Enum.max([window_start, native_start], DateTime),
+          else: window_start
+
+      if DateTime.after?(window_start, window_end) do
+        # nothing tracked natively in this window yet
+        %{covered: true, since: nil}
+      else
+        Plausible.Ingestion.PersistentId.Periods.coverage(periods, window_start, window_end)
+      end
+    end)
+    |> Enum.reduce(%{covered: true, since: nil}, fn window, acc ->
+      %{covered: acc.covered and window.covered, since: window.since || acc.since}
+    end)
   end
 
   def put_comparison_utc_time_range(%Query{include: %{compare: nil}} = query), do: query

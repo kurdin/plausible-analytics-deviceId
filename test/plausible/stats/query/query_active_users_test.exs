@@ -187,7 +187,7 @@ defmodule Plausible.Stats.QueryActiveUsersTest do
       {:ok, query} = query(site, [])
       %QueryResult{meta: meta} = Stats.query(site, query)
 
-      assert %{code: :persistent_tracking_partial, message: message} =
+      assert %{code: :persistent_tracking_partial, scope: :period, message: message} =
                meta[:metric_warnings][:mau]
 
       assert message =~ "enabled on 2021-01-05"
@@ -230,6 +230,62 @@ defmodule Plausible.Stats.QueryActiveUsersTest do
       refute meta[:metric_warnings][:dau]
       refute meta[:metric_warnings][:wau]
       assert meta[:metric_warnings][:mau]
+    end
+
+    test "only the reported windows count, not the days between them", %{site: site} do
+      populate_timeline(site)
+
+      # tracking was off 2020-12-05..2020-12-15
+      Repo.insert!(%Plausible.Ingestion.PersistentId.Periods{
+        started_at: ~U[2020-10-01 00:00:00Z],
+        ended_at: ~U[2020-12-05 00:00:00Z]
+      })
+
+      tracking_since(~U[2020-12-15 00:00:00Z])
+
+      # WAU windows: 11-24..30, 12-25..31, 01-25..31; the gap is between them
+      {:ok, query} =
+        query(site,
+          metrics: [:wau],
+          dimensions: ["time:month"],
+          input_date_range: {:date_range, ~D[2020-11-01], ~D[2021-01-31]}
+        )
+
+      %QueryResult{meta: meta} = Stats.query(site, query)
+      refute meta[:metric_warnings][:wau]
+
+      # a daily series reports the days in the gap
+      {:ok, query} =
+        query(site,
+          metrics: [:wau],
+          dimensions: ["time:day"],
+          input_date_range: {:date_range, ~D[2020-11-01], ~D[2021-01-31]}
+        )
+
+      %QueryResult{meta: meta} = Stats.query(site, query)
+      assert meta[:metric_warnings][:wau]
+    end
+
+    test "warns when only the comparison period lacks persistent tracking", %{site: site} do
+      populate_timeline(site)
+      # the main WAU window (2021-01-04..10) is covered, the previous period's
+      # (2020-12-26..31) isn't
+      tracking_since(~U[2021-01-01 00:00:00Z])
+
+      {:ok, query} = query(site, metrics: [:wau])
+      %QueryResult{meta: meta} = Stats.query(site, query)
+      refute meta[:metric_warnings][:wau]
+
+      {:ok, query} =
+        query(site, metrics: [:wau], include: %QueryInclude{compare: :previous_period})
+
+      %QueryResult{meta: meta} = Stats.query(site, query)
+
+      assert %{code: :persistent_tracking_partial, message: message} =
+               meta[:metric_warnings][:wau]
+
+      assert message =~ "comparison period"
+      assert meta[:metric_warnings][:wau].scope == :comparison
     end
 
     test "days before the site's native stats start don't count", %{site: site} do

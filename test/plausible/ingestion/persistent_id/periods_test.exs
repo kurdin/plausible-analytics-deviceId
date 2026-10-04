@@ -49,6 +49,54 @@ defmodule Plausible.Ingestion.PersistentId.PeriodsTest do
       end
     end
 
+    test "PERSISTENT_TRACKING_SINCE is stored as an open period on an enabled first boot" do
+      put_config(
+        enabled: true,
+        secret: "test-persistent-salt-secret-0123456789",
+        since: ~D[2025-06-01]
+      )
+
+      assert Periods.record_boot(~U[2026-01-01 10:00:00Z]) == :started
+      assert Periods.record_boot(~U[2026-01-02 10:00:00Z]) == :unchanged
+      assert Periods.list() == [%{started_at: ~U[2025-06-01 00:00:00Z], ended_at: nil}]
+
+      put_config(enabled: false)
+      assert Periods.record_boot(~U[2026-01-03 10:00:00Z]) == :ended
+
+      assert Periods.list() == [
+               %{started_at: ~U[2025-06-01 00:00:00Z], ended_at: ~U[2026-01-03 10:00:00Z]}
+             ]
+    end
+
+    test "PERSISTENT_TRACKING_SINCE is closed on a disabled first boot" do
+      put_config(enabled: false, since: ~D[2025-06-01])
+
+      assert Periods.record_boot(~U[2026-01-01 10:00:00Z]) == :ended
+      assert Periods.record_boot(~U[2026-01-02 10:00:00Z]) == :unchanged
+
+      periods = Periods.list()
+
+      assert periods == [
+               %{started_at: ~U[2025-06-01 00:00:00Z], ended_at: ~U[2026-01-01 10:00:00Z]}
+             ]
+
+      # windows after tracking was turned off aren't covered
+      assert %{covered: false} =
+               Periods.coverage(periods, ~U[2026-01-05 00:00:00Z], ~U[2026-01-10 00:00:00Z])
+
+      # enabling it again later starts a new period
+      put_config(enabled: true, secret: "test-persistent-salt-secret-0123456789")
+      assert Periods.record_boot(~U[2026-02-01 10:00:00Z]) == :started
+      assert length(Periods.list()) == 2
+    end
+
+    test "a PERSISTENT_TRACKING_SINCE in the future isn't stored" do
+      put_config(enabled: false, since: ~D[2027-01-01])
+
+      assert Periods.record_boot(~U[2026-01-01 10:00:00Z]) == :unchanged
+      assert Repo.aggregate(Periods, :count) == 0
+    end
+
     test "does nothing when never enabled" do
       put_config(enabled: false)
       assert Periods.record_boot() == :unchanged

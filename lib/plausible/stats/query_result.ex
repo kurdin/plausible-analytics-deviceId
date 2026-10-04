@@ -280,7 +280,7 @@ defmodule Plausible.Stats.QueryResult do
 
   defp metric_warning(metric, %Query{} = query) when metric in [:dau, :wau, :mau] do
     case query.active_users_coverage[metric] do
-      %{covered: false, since: since} ->
+      %{covered: false, since: since} = coverage ->
         since_text =
           if since do
             " (enabled on " <>
@@ -290,12 +290,27 @@ defmodule Plausible.Stats.QueryResult do
             ""
           end
 
-        %{
-          code: :persistent_tracking_partial,
-          message:
-            "Part of this period was tracked without persistent tracking#{since_text}. " <>
-              "Visitor ids rotated daily then, so active users are overestimated."
-        }
+        # scope: whether the selected period or only the comparison period is affected
+        case coverage do
+          %{uncovered: :comparison} ->
+            %{
+              code: :persistent_tracking_partial,
+              scope: :comparison,
+              message:
+                "Part of the comparison period was tracked without persistent tracking#{since_text}. " <>
+                  "Visitor ids rotated daily then, so its active users are overestimated " <>
+                  "and the change is not reliable."
+            }
+
+          _ ->
+            %{
+              code: :persistent_tracking_partial,
+              scope: :period,
+              message:
+                "Part of this period was tracked without persistent tracking#{since_text}. " <>
+                  "Visitor ids rotated daily then, so active users are overestimated."
+            }
+        end
 
       _ ->
         nil

@@ -14,8 +14,10 @@ defmodule Plausible.Ingestion.PersistentId.Periods do
     * disabled, and a period is open: that period ends now
 
   Installs that enabled persistent tracking before periods were recorded can
-  set `PERSISTENT_TRACKING_SINCE=YYYY-MM-DD`. It counts as a period starting
-  at that date (UTC) that is still open.
+  set `PERSISTENT_TRACKING_SINCE=YYYY-MM-DD`: a period starting at that date
+  (UTC). On the first boot that records anything (empty table), it is stored
+  as a real period, open if tracking is enabled and ended at that boot if it
+  isn't, so later boots open and close periods after it as usual.
   """
 
   use Ecto.Schema
@@ -41,8 +43,12 @@ defmodule Plausible.Ingestion.PersistentId.Periods do
   def record_boot(now \\ DateTime.utc_now()) do
     now = DateTime.truncate(now, :second)
     open? = Repo.exists?(open_periods())
+    since = since_datetime()
 
     cond do
+      since && not DateTime.after?(since, now) && not Repo.exists?(__MODULE__) ->
+        record_since(since, now)
+
       PersistentId.enabled?() and not open? ->
         # The unique index on open periods makes concurrent boots (several
         # nodes) insert at most one open period.
@@ -64,6 +70,24 @@ defmodule Plausible.Ingestion.PersistentId.Periods do
       :error
   end
 
+  # Stores PERSISTENT_TRACKING_SINCE as the first period. If tracking is off at
+  # this boot, it was on from `since` until now at most.
+  defp record_since(since, now) do
+    if PersistentId.enabled?() do
+      Repo.insert!(%__MODULE__{started_at: since}, on_conflict: :nothing)
+      Logger.info("Persistent tracking enabled since #{since} (PERSISTENT_TRACKING_SINCE)")
+      :started
+    else
+      Repo.insert!(%__MODULE__{started_at: since, ended_at: now})
+
+      Logger.info(
+        "Persistent tracking disabled, recording the period since #{since} (PERSISTENT_TRACKING_SINCE) as ended at #{now}"
+      )
+
+      :ended
+    end
+  end
+
   @doc "All known periods, including the configured `PERSISTENT_TRACKING_SINCE`."
   @spec list() :: [period()]
   def list() do
@@ -74,23 +98,30 @@ defmodule Plausible.Ingestion.PersistentId.Periods do
       )
       |> Repo.all()
 
-    case Keyword.get(config(), :since) do
-      %Date{} = since ->
-        # Covers the time before periods were recorded: it lasts until the
-        # first recorded period, so later off/on gaps still show up.
-        ended_at =
-          case recorded do
-            [first | _] -> first.started_at
-            [] -> nil
-          end
-
-        [
-          %{started_at: DateTime.new!(since, ~T[00:00:00], "Etc/UTC"), ended_at: ended_at}
-          | recorded
-        ]
-
-      _ ->
+    case {since_datetime(), recorded} do
+      {nil, _} ->
         recorded
+
+      # Not recorded yet (before the first boot that records periods)
+      {since, []} ->
+        [%{started_at: since, ended_at: nil}]
+
+      {since, [first | _] = recorded} ->
+        if DateTime.after?(first.started_at, since) do
+          # Covers the time before periods were recorded: it lasts until the
+          # first recorded period, so later off/on gaps still show up.
+          [%{started_at: since, ended_at: first.started_at} | recorded]
+        else
+          # already stored by record_boot/1
+          recorded
+        end
+    end
+  end
+
+  defp since_datetime() do
+    case Keyword.get(config(), :since) do
+      %Date{} = since -> DateTime.new!(since, ~T[00:00:00], "Etc/UTC")
+      _ -> nil
     end
   end
 

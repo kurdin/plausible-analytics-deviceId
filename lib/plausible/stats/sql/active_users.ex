@@ -60,15 +60,35 @@ defmodule Plausible.Stats.SQL.ActiveUsers do
   end
 
   @doc """
-  First and last day whose values the query reports. Each metric's windows
-  span from `first - (window_days - 1)` to `last`.
+  The days `metric`'s reported values look at, as sorted `{first, last}`
+  date intervals: each reported day's window
+  (`day - (window_days - 1)` .. `day`), with overlapping or adjacent windows
+  merged. Days between the windows (e.g. mid-month days for a monthly MAU
+  series) don't affect the result.
   """
-  @spec reported_day_bounds(Query.t()) :: {Date.t(), Date.t()}
-  def reported_day_bounds(%Query{} = query) do
+  @spec reported_windows(Query.t(), atom()) :: [{Date.t(), Date.t()}]
+  def reported_windows(%Query{} = query, metric) do
     date_range = Query.date_range(query, trim_trailing: true)
-    reported = reported_days(query.dimensions, date_range)
+    lookback = window_days(metric) - 1
 
-    {first_reported_day(reported), date_range.last}
+    case reported_days(query.dimensions, date_range) do
+      {:range, first, last} ->
+        [{Date.add(first, -lookback), last}]
+
+      {:days, days} ->
+        days
+        |> Enum.map(&{Date.add(&1, -lookback), &1})
+        |> Enum.reduce([], fn
+          {from, to}, [{prev_from, prev_to} | rest] = acc ->
+            if Date.diff(from, prev_to) <= 1,
+              do: [{prev_from, to} | rest],
+              else: [{from, to} | acc]
+
+          window, [] ->
+            [window]
+        end)
+        |> Enum.reverse()
+    end
   end
 
   # The days whose rolling values are returned:

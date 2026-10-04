@@ -108,7 +108,9 @@ export default function TopStats({
     }
 
     if (warning.code === 'persistent_tracking_partial') {
-      return 'Overestimated: includes days before persistent tracking'
+      return warning.scope === 'comparison'
+        ? 'Comparison overestimated: includes days before persistent tracking'
+        : 'Overestimated: includes days before persistent tracking'
     }
 
     return null

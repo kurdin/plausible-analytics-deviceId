@@ -57,9 +57,18 @@ as the metrics `dau`, `wau` and `mau`.
   persistent tracking was switched on (table `persistent_tracking_periods`,
   written at boot). Results whose windows reach back before that carry a
   `persistent_tracking_partial` warning (`meta.metric_warnings`), shown as
-  `*` on the tiles. Only the windows of the reported days count, and days
-  before the site's first native stats don't. If you enabled tracking before this feature existed, set
-  `PERSISTENT_TRACKING_SINCE=YYYY-MM-DD`.
+  `*` on the tiles.
+  * Each reported day's own window is checked, so the days between them
+    don't matter. For example, a monthly WAU series isn't flagged for a
+    tracking gap that falls between two month-end windows.
+  * Days before the site's first native stats don't count.
+  * When comparing, the comparison period's windows are checked too. A
+    warning caused only by them has `"scope": "comparison"` (otherwise
+    `"period"`), since then the change is what can't be trusted.
+* If you enabled tracking before this feature existed, set
+  `PERSISTENT_TRACKING_SINCE=YYYY-MM-DD`. The next boot stores it as the
+  first period: still open if tracking is on, or ended at that boot if
+  it's off.
 
 ```sh
 curl -sS http://localhost:8000/api/v2/query -H "Authorization: Bearer $API_KEY" \
