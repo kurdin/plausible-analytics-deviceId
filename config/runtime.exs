@@ -181,12 +181,12 @@ persistent_tracking_device_id_prop =
   end
 
 persistent_tracking_since =
-  case get_var_from_path_or_env(config_dir, "PERSISTENT_TRACKING_SINCE") do
-    nil ->
+  case String.trim(get_var_from_path_or_env(config_dir, "PERSISTENT_TRACKING_SINCE", "")) do
+    "" ->
       nil
 
     value ->
-      case Date.from_iso8601(String.trim(value)) do
+      case Date.from_iso8601(value) do
         {:ok, date} ->
           date
 

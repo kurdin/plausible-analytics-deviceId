@@ -33,6 +33,22 @@ defmodule Plausible.Ingestion.PersistentId.PeriodsTest do
                Periods.list()
     end
 
+    test "closes every open period when disabled" do
+      Repo.insert!(%Periods{started_at: ~U[2026-01-01 00:00:00Z]})
+      put_config(enabled: false)
+
+      assert Periods.record_boot(~U[2026-01-03 10:00:00Z]) == :ended
+      assert Enum.all?(Periods.list(), &(&1.ended_at == ~U[2026-01-03 10:00:00Z]))
+    end
+
+    test "only one open period can exist" do
+      Repo.insert!(%Periods{started_at: ~U[2026-01-01 00:00:00Z]})
+
+      assert_raise Ecto.ConstraintError, fn ->
+        Repo.insert!(%Periods{started_at: ~U[2026-01-02 00:00:00Z]})
+      end
+    end
+
     test "does nothing when never enabled" do
       put_config(enabled: false)
       assert Periods.record_boot() == :unchanged
@@ -45,6 +61,26 @@ defmodule Plausible.Ingestion.PersistentId.PeriodsTest do
       put_config(since: ~D[2025-06-01])
 
       assert Periods.list() == [%{started_at: ~U[2025-06-01 00:00:00Z], ended_at: nil}]
+    end
+
+    test "PERSISTENT_TRACKING_SINCE lasts until the first recorded period" do
+      put_config(since: ~D[2025-06-01])
+
+      Repo.insert!(%Periods{
+        started_at: ~U[2026-01-01 00:00:00Z],
+        ended_at: ~U[2026-02-01 00:00:00Z]
+      })
+
+      periods = Periods.list()
+
+      assert hd(periods) == %{
+               started_at: ~U[2025-06-01 00:00:00Z],
+               ended_at: ~U[2026-01-01 00:00:00Z]
+             }
+
+      # tracking was off after 2026-02-01, so later windows aren't covered
+      assert %{covered: false} =
+               Periods.coverage(periods, ~U[2026-01-20 00:00:00Z], ~U[2026-02-10 00:00:00Z])
     end
   end
 

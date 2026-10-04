@@ -51,18 +51,56 @@ defmodule Plausible.Stats.SQL.ActiveUsers do
 
   def build(%Query{} = query, site) do
     date_range = Query.date_range(query, trim_trailing: true)
+    reported = reported_days(query.dimensions, date_range)
 
     query
-    |> per_day_states_query(date_range, site)
-    |> rolling_query(date_range)
+    |> per_day_states_query(first_reported_day(reported), site)
+    |> rolling_query(reported)
     |> bucket(query, date_range)
   end
 
-  # Per-day uniqState(user_id) over the queried range widened by 29 days.
-  defp per_day_states_query(query, date_range, site) do
-    widened_range =
+  @doc """
+  First and last day whose values the query reports. Each metric's windows
+  span from `first - (window_days - 1)` to `last`.
+  """
+  @spec reported_day_bounds(Query.t()) :: {Date.t(), Date.t()}
+  def reported_day_bounds(%Query{} = query) do
+    date_range = Query.date_range(query, trim_trailing: true)
+    reported = reported_days(query.dimensions, date_range)
+
+    {first_reported_day(reported), date_range.last}
+  end
+
+  # The days whose rolling values are returned:
+  #   time:day -> every day in the range
+  #   time:week / time:month -> the last day of each bucket (or the range)
+  #   no dimension -> the last day of the range
+  # Only these are computed, so e.g. a dashboard tile for "All time" scans
+  # just the last 30 days.
+  defp reported_days(["time:day"], date_range), do: {:range, date_range.first, date_range.last}
+  defp reported_days([], date_range), do: {:days, [date_range.last]}
+
+  defp reported_days(["time:week"], date_range),
+    do: {:days, bucket_ends(date_range, &(Date.day_of_week(&1) == 7))}
+
+  defp reported_days(["time:month"], date_range),
+    do: {:days, bucket_ends(date_range, &(&1 == Date.end_of_month(&1)))}
+
+  defp bucket_ends(date_range, last_day_of_bucket?) do
+    date_range
+    |> Enum.filter(last_day_of_bucket?)
+    |> Enum.concat([date_range.last])
+    |> Enum.uniq()
+  end
+
+  defp first_reported_day({:range, first, _last}), do: first
+  defp first_reported_day({:days, [first | _]}), do: first
+
+  # Per-day uniqState(user_id) from 29 days before the first reported day.
+  defp per_day_states_query(query, first_reported_day, site) do
+    states_range =
       DateTimeRange.new!(
-        Date.add(date_range.first, -(@window_days - 1)),
+        Date.add(first_reported_day, -(@window_days - 1)),
         query.utc_time_range.last,
         query.timezone
       )
@@ -72,7 +110,7 @@ defmodule Plausible.Stats.SQL.ActiveUsers do
       Query.set(query,
         metrics: [:user_id_state],
         dimensions: ["time:day"],
-        utc_time_range: widened_range,
+        utc_time_range: states_range,
         include_imported: false,
         order_by: [],
         pagination: nil,
@@ -83,15 +121,13 @@ defmodule Plausible.Stats.SQL.ActiveUsers do
     SQL.QueryBuilder.build(states_query, site)
   end
 
-  defp rolling_query(states_q, date_range) do
+  defp rolling_query(states_q, reported) do
     from(s in subquery(states_q),
       # keep in sync with @window_days
       join: offset in fragment("range(0, 30)"),
       hints: "ARRAY",
       on: true,
-      where:
-        fragment("? + ?", s.time, offset) >= ^date_range.first and
-          fragment("? + ?", s.time, offset) <= ^date_range.last,
+      where: ^reported_days_condition(reported),
       group_by: fragment("? + ?", s.time, offset),
       select: %{
         target_day: fragment("? + ?", s.time, offset),
@@ -99,6 +135,20 @@ defmodule Plausible.Stats.SQL.ActiveUsers do
         wau: fragment("uniqMergeIf(?, ? < 7)", s.user_id_state, offset),
         mau: fragment("uniqMerge(?)", s.user_id_state)
       }
+    )
+  end
+
+  defp reported_days_condition({:range, first, last}) do
+    dynamic(
+      [s, offset],
+      fragment("? + ?", s.time, offset) >= ^first and fragment("? + ?", s.time, offset) <= ^last
+    )
+  end
+
+  defp reported_days_condition({:days, days}) do
+    dynamic(
+      [s, offset],
+      fragment("has(?, ? + ?)", type(^days, {:array, :date}), s.time, offset)
     )
   end
 

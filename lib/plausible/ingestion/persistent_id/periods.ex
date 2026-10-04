@@ -40,16 +40,18 @@ defmodule Plausible.Ingestion.PersistentId.Periods do
   @spec record_boot(DateTime.t()) :: :started | :ended | :unchanged | :error
   def record_boot(now \\ DateTime.utc_now()) do
     now = DateTime.truncate(now, :second)
-    open = open_period()
+    open? = Repo.exists?(open_periods())
 
     cond do
-      PersistentId.enabled?() and is_nil(open) ->
-        Repo.insert!(%__MODULE__{started_at: now})
+      PersistentId.enabled?() and not open? ->
+        # The unique index on open periods makes concurrent boots (several
+        # nodes) insert at most one open period.
+        Repo.insert!(%__MODULE__{started_at: now}, on_conflict: :nothing)
         Logger.info("Persistent tracking enabled, recording period start at #{now}")
         :started
 
-      not PersistentId.enabled?() and not is_nil(open) ->
-        open |> Ecto.Changeset.change(ended_at: now) |> Repo.update!()
+      not PersistentId.enabled?() and open? ->
+        Repo.update_all(open_periods(), set: [ended_at: now, updated_at: DateTime.to_naive(now)])
         Logger.info("Persistent tracking disabled, recording period end at #{now}")
         :ended
 
@@ -74,7 +76,18 @@ defmodule Plausible.Ingestion.PersistentId.Periods do
 
     case Keyword.get(config(), :since) do
       %Date{} = since ->
-        [%{started_at: DateTime.new!(since, ~T[00:00:00], "Etc/UTC"), ended_at: nil} | recorded]
+        # Covers the time before periods were recorded: it lasts until the
+        # first recorded period, so later off/on gaps still show up.
+        ended_at =
+          case recorded do
+            [first | _] -> first.started_at
+            [] -> nil
+          end
+
+        [
+          %{started_at: DateTime.new!(since, ~T[00:00:00], "Etc/UTC"), ended_at: ended_at}
+          | recorded
+        ]
 
       _ ->
         recorded
@@ -122,9 +135,8 @@ defmodule Plausible.Ingestion.PersistentId.Periods do
     %{covered: covered, since: since}
   end
 
-  defp open_period() do
-    from(p in __MODULE__, where: is_nil(p.ended_at), order_by: [desc: p.started_at], limit: 1)
-    |> Repo.one()
+  defp open_periods() do
+    from(p in __MODULE__, where: is_nil(p.ended_at))
   end
 
   defp config(), do: Application.get_env(:plausible, PersistentId, [])

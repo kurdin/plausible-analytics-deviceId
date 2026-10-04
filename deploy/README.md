@@ -40,8 +40,11 @@ as the metrics `dau`, `wau` and `mau`.
 * **DAU** = unique visitors on the day. **WAU** = unique visitors in the 7 days
   ending on the day. **MAU** = the same over 30 days (rolling windows).
 * Without a time dimension (dashboard tiles), the value is the one on the last
-  day of the selected range. With `time:day` you get a daily series. With
-  `time:week` / `time:month`, the value on each bucket's last day.
+  day of the selected range, or today if the range extends past today (e.g.
+  "This month"). With `time:day` you get a daily series. With `time:week` /
+  `time:month`, the value on each bucket's last day. The generic `time`
+  dimension isn't supported. Only the windows of the reported days are
+  computed, so a tile for "All time" only scans the last 30 days.
 * Windows reach back before the selected range. MAU for the 1st of a month
   counts visitors from the 29 days before it.
 * Approximate (ClickHouse `uniq`, typically within 1–2%), consistent with
@@ -54,7 +57,8 @@ as the metrics `dau`, `wau` and `mau`.
   persistent tracking was switched on (table `persistent_tracking_periods`,
   written at boot). Results whose windows reach back before that carry a
   `persistent_tracking_partial` warning (`meta.metric_warnings`), shown as
-  `*` on the tiles. If you enabled tracking before this feature existed, set
+  `*` on the tiles. Only the windows of the reported days count, and days
+  before the site's first native stats don't. If you enabled tracking before this feature existed, set
   `PERSISTENT_TRACKING_SINCE=YYYY-MM-DD`.
 
 ```sh

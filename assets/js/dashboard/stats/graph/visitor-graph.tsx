@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import * as storage from '../../util/storage'
 import TopStats from './top-stats'
-import { isGraphableMetric, useTopStatsQuery } from './fetch-top-stats'
+import {
+  isActiveUserMetric,
+  isGraphableMetric,
+  useTopStatsQuery
+} from './fetch-top-stats'
 import { useMainGraphQuery } from './fetch-main-graph'
 import { PlausibleSite, useSiteContext } from '../../site-context'
 import { Metric } from '../metrics'
@@ -40,13 +44,20 @@ export default function VisitorGraph({
 
   const {
     apiState: topStatsApiState,
-    isRealtimeSilentUpdate: isTopStatsRealtimeSilentUpdate
+    isRealtimeSilentUpdate: isTopStatsRealtimeSilentUpdate,
+    activeUsersPending
   } = useTopStatsQuery()
+
+  // Active user metrics can't be graphed per hour/minute: graph visitors
+  // instead (without forgetting the selection for other intervals).
+  const graphMetric = isGraphableMetric(selectedMetric, selectedInterval)
+    ? selectedMetric
+    : DEFAULT_GRAPH_METRIC
 
   const {
     apiState: mainGraphApiState,
     isRealtimeSilentUpdate: isMainGraphRealtimeSilentUpdate
-  } = useMainGraphQuery(selectedMetric, selectedInterval)
+  } = useMainGraphQuery(graphMetric, selectedInterval)
 
   // Fall back to default graph metric if the stored metric
   // does not exist in the returned Top Stats
@@ -57,8 +68,9 @@ export default function VisitorGraph({
       setSelectedMetric((currentlySelectedMetric) => {
         if (
           currentlySelectedMetric &&
-          availableMetrics.includes(currentlySelectedMetric) &&
-          isGraphableMetric(currentlySelectedMetric, selectedInterval)
+          (availableMetrics.includes(currentlySelectedMetric) ||
+            // active user tiles arrive in a separate, possibly slower request
+            (activeUsersPending && isActiveUserMetric(currentlySelectedMetric)))
         ) {
           return currentlySelectedMetric
         } else {
@@ -66,7 +78,7 @@ export default function VisitorGraph({
         }
       })
     }
-  }, [topStatsApiState.data, selectedInterval])
+  }, [topStatsApiState.data, activeUsersPending])
 
   // sync import related info
   useEffect(() => {
@@ -124,7 +136,7 @@ export default function VisitorGraph({
           {topStatsApiState.data ? (
             <TopStats
               data={topStatsApiState.data}
-              selectedMetric={selectedMetric}
+              selectedMetric={graphMetric}
               onMetricClick={onMetricClick}
               tooltipBoundary={topStatsBoundary.current}
               selectedInterval={selectedInterval}

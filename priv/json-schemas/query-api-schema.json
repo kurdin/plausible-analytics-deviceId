@@ -241,7 +241,7 @@
         },
         {
           "const": "dau",
-          "markdownDescription": "Daily active users: unique visitors on the day. Without a time dimension, the value on the last day of the date range. Can't be combined with other metrics; allowed dimensions: none, `time:day`, `time:week`, `time:month` (value on the bucket's last day). Accurate across days only with persistent tracking (`ENABLE_PERSISTENT_TRACKING`)."
+          "markdownDescription": "Daily active users: unique visitors on the day. Without a time dimension, the value on the last day of the date range (or today, if the range extends past today). Can't be combined with other metrics; allowed dimensions: none or one of `time:day`, `time:week`, `time:month` (value on the bucket's last day); the generic `time` dimension is not supported. Accurate across days only with persistent tracking (`ENABLE_PERSISTENT_TRACKING`)."
         },
         {
           "const": "wau",

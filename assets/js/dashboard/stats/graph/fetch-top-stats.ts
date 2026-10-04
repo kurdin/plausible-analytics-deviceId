@@ -92,35 +92,58 @@ export function useTopStatsQuery() {
     { getStatsQuery: getTopStatsQuery, enabled: activeUsersEnabled }
   )
 
-  const mergedApiState = useMemo(
+  // Don't show the previous period's active users (TanStack placeholder data)
+  // next to the new period's regular stats.
+  const activeUsersReady =
+    activeUsersEnabled &&
+    !!activeUsersApiState.data &&
+    !(activeUsersApiState.isPlaceholderData && !apiState.isPlaceholderData)
+
+  // Depend on the stable `data` references only: useQuery returns a new
+  // result object on every render, which would re-create the merged data on
+  // every render and loop through effects that depend on it.
+  const mergedData = useMemo(
     () =>
-      activeUsersEnabled
-        ? mergeActiveUsers(apiState, activeUsersApiState)
-        : apiState,
-    [activeUsersEnabled, apiState, activeUsersApiState]
+      activeUsersReady && apiState.data && activeUsersApiState.data
+        ? mergeActiveUsersData(apiState.data, activeUsersApiState.data)
+        : apiState.data,
+    [activeUsersReady, apiState.data, activeUsersApiState.data]
   )
 
-  return { apiState: mergedApiState, isRealtimeSilentUpdate }
+  const mergedApiState = {
+    ...apiState,
+    data: mergedData,
+    isFetching:
+      apiState.isFetching ||
+      (activeUsersEnabled && activeUsersApiState.isFetching)
+  } as UseQueryResult<api.QueryApiResponse>
+
+  return {
+    apiState: mergedApiState,
+    isRealtimeSilentUpdate,
+    activeUsersPending: activeUsersEnabled && !activeUsersReady
+  }
 }
 
 /**
  * Appends the active user metrics to the regular top stats response, so they
- * render as extra tiles. If the active users query failed or is still
- * loading, the regular tiles are shown without them.
+ * render as extra tiles. Returns the regular response unchanged if the two
+ * can't be combined (no rows, or only one of them has a comparison).
  */
-export function mergeActiveUsers(
-  apiState: UseQueryResult<api.QueryApiResponse>,
-  activeUsersApiState: UseQueryResult<api.QueryApiResponse>
-): UseQueryResult<api.QueryApiResponse> {
-  const main = apiState.data
-  const activeUsers = activeUsersApiState.data
-
-  if (!main || !activeUsers || !main.results[0] || !activeUsers.results[0]) {
-    return apiState
-  }
-
+export function mergeActiveUsersData(
+  main: api.QueryApiResponse,
+  activeUsers: api.QueryApiResponse
+): api.QueryApiResponse {
   const mainRow = main.results[0]
   const activeUsersRow = activeUsers.results[0]
+
+  if (
+    !mainRow ||
+    !activeUsersRow ||
+    !!mainRow.comparison !== !!activeUsersRow.comparison
+  ) {
+    return main
+  }
 
   const comparison =
     mainRow.comparison && activeUsersRow.comparison
@@ -134,9 +157,9 @@ export function mergeActiveUsers(
             ...activeUsersRow.comparison.change
           ]
         }
-      : mainRow.comparison
+      : undefined
 
-  const data: api.QueryApiResponse = {
+  return {
     ...main,
     query: {
       ...main.query,
@@ -157,12 +180,6 @@ export function mergeActiveUsers(
       }
     ]
   }
-
-  return {
-    ...apiState,
-    data,
-    isFetching: apiState.isFetching || activeUsersApiState.isFetching
-  } as UseQueryResult<api.QueryApiResponse>
 }
 
 export function getTopStatsQuery(queryKey: StatsReportQueryKey): StatsQuery {

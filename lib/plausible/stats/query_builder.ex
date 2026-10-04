@@ -165,21 +165,35 @@ defmodule Plausible.Stats.QueryBuilder do
   def set_active_users_coverage(%Query{} = query) do
     if Plausible.Stats.SQL.ActiveUsers.active_users_query?(query) do
       periods = Plausible.Ingestion.PersistentId.Periods.list()
-      date_range = Query.date_range(query, trim_trailing: true)
+
+      # Only the windows of the reported days matter (e.g. just the last day
+      # for a dashboard tile)
+      {first_reported_day, _last} =
+        Plausible.Stats.SQL.ActiveUsers.reported_day_bounds(query)
 
       window_end =
         Enum.min([query.utc_time_range.last, query.now], DateTime)
+
+      # Days before the site's native stats start have no data to overcount
+      native_start =
+        query.site_native_stats_start_at &&
+          DateTime.from_naive!(query.site_native_stats_start_at, "Etc/UTC")
 
       coverage =
         Map.new(query.metrics, fn metric ->
           window_days = Plausible.Stats.SQL.ActiveUsers.window_days(metric)
 
-          first_day = Date.add(date_range.first, -(window_days - 1))
+          first_day = Date.add(first_reported_day, -(window_days - 1))
 
           # DateTimeRange.new! handles local midnights that fall into a DST gap
           window_start =
             DateTimeRange.new!(first_day, first_day, query.timezone).first
             |> DateTime.shift_zone!("Etc/UTC")
+
+          window_start =
+            if native_start,
+              do: Enum.max([window_start, native_start], DateTime),
+              else: window_start
 
           {metric,
            Plausible.Ingestion.PersistentId.Periods.coverage(periods, window_start, window_end)}
@@ -570,12 +584,13 @@ defmodule Plausible.Stats.QueryBuilder do
              "Metrics `dau`, `wau` and `mau` cannot be queried together with other metrics."
          }}
 
-      Enum.any?(query.dimensions, &(&1 not in @active_user_dimensions)) ->
+      length(query.dimensions) > 1 or
+          Enum.any?(query.dimensions, &(&1 not in @active_user_dimensions)) ->
         {:error,
          %QueryError{
            code: :invalid_metrics,
            message:
-             "Metric `#{metric}` can only be queried without dimensions or with a `time:day`, `time:week` or `time:month` dimension."
+             "Metric `#{metric}` can only be queried without dimensions or with one `time:day`, `time:week` or `time:month` dimension (the generic `time` dimension is not supported)."
          }}
 
       query.input_date_range in [:realtime, :realtime_30m] ->

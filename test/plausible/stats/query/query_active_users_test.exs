@@ -139,6 +139,12 @@ defmodule Plausible.Stats.QueryActiveUsersTest do
       assert error.message =~ "time:day"
 
       assert {:error, _} = query(site, dimensions: ["time:hour"])
+      assert {:error, _} = query(site, dimensions: ["time"])
+    end
+
+    test "only one time dimension", %{site: site} do
+      assert {:error, error} = query(site, dimensions: ["time:day", "time:week"])
+      assert error.message =~ "one `time:day`"
     end
 
     test "not for realtime", %{site: site} do
@@ -169,13 +175,15 @@ defmodule Plausible.Stats.QueryActiveUsersTest do
   end
 
   describe "persistent tracking warning" do
-    test "warns when windows reach back before persistent tracking was enabled", %{site: site} do
+    defp tracking_since(datetime) do
+      Repo.insert!(%Plausible.Ingestion.PersistentId.Periods{started_at: datetime})
+    end
+
+    test "warns when the reported windows reach back before persistent tracking", %{site: site} do
       populate_timeline(site)
+      tracking_since(~U[2021-01-05 00:00:00Z])
 
-      Repo.insert!(%Plausible.Ingestion.PersistentId.Periods{
-        started_at: ~U[2021-01-05 00:00:00Z]
-      })
-
+      # no dimensions: only the windows ending on 2021-01-10 matter
       {:ok, query} = query(site, [])
       %QueryResult{meta: meta} = Stats.query(site, query)
 
@@ -183,16 +191,26 @@ defmodule Plausible.Stats.QueryActiveUsersTest do
                meta[:metric_warnings][:mau]
 
       assert message =~ "enabled on 2021-01-05"
+      # WAU window 2021-01-04..10 starts one day too early
       assert meta[:metric_warnings][:wau]
+      # DAU of 2021-01-10 is fully covered
+      refute meta[:metric_warnings][:dau]
+    end
+
+    test "a daily series warns from the first reported day", %{site: site} do
+      populate_timeline(site)
+      tracking_since(~U[2021-01-05 00:00:00Z])
+
+      {:ok, query} = query(site, dimensions: ["time:day"])
+      %QueryResult{meta: meta} = Stats.query(site, query)
+
+      # DAU of 2021-01-01..04 was tracked with rotating ids
       assert meta[:metric_warnings][:dau]
     end
 
     test "no warning when all windows are covered", %{site: site} do
       populate_timeline(site)
-
-      Repo.insert!(%Plausible.Ingestion.PersistentId.Periods{
-        started_at: ~U[2020-11-01 00:00:00Z]
-      })
+      tracking_since(~U[2020-11-01 00:00:00Z])
 
       {:ok, query} = query(site, [])
       %QueryResult{meta: meta} = Stats.query(site, query)
@@ -203,10 +221,8 @@ defmodule Plausible.Stats.QueryActiveUsersTest do
 
     test "each metric only needs its own window to be covered", %{site: site} do
       populate_timeline(site)
-      # range starts 2021-01-01: the WAU window starts 2020-12-26, the MAU window 2020-12-03
-      Repo.insert!(%Plausible.Ingestion.PersistentId.Periods{
-        started_at: ~U[2020-12-26 00:00:00Z]
-      })
+      # reported day 2021-01-10: WAU window starts 2021-01-04, MAU window 2020-12-12
+      tracking_since(~U[2020-12-26 00:00:00Z])
 
       {:ok, query} = query(site, [])
       %QueryResult{meta: meta} = Stats.query(site, query)
@@ -214,6 +230,22 @@ defmodule Plausible.Stats.QueryActiveUsersTest do
       refute meta[:metric_warnings][:dau]
       refute meta[:metric_warnings][:wau]
       assert meta[:metric_warnings][:mau]
+    end
+
+    test "days before the site's native stats start don't count", %{site: site} do
+      site =
+        site
+        |> Ecto.Changeset.change(native_stats_start_at: ~N[2021-01-06 00:00:00])
+        |> Repo.update!()
+
+      populate_timeline(site)
+      tracking_since(~U[2021-01-05 00:00:00Z])
+
+      {:ok, query} = query(site, [])
+      %QueryResult{meta: meta} = Stats.query(site, query)
+
+      refute meta[:metric_warnings][:mau]
+      refute meta[:metric_warnings][:wau]
     end
   end
 end
