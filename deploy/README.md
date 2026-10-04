@@ -63,6 +63,10 @@ before enabling them.
 
 ## Running
 
+For a full install / upgrade / rollback guide (including migrating an old
+v2.0 Docker install without data loss), see
+[deployment.md in kurdin/community-edition](https://github.com/kurdin/community-edition/blob/claude/determined-cerf-dqrxgj/deployment.md).
+
 ```sh
 cp plausible-conf.env.example plausible-conf.env   # edit BASE_URL, secrets
 docker compose up -d --build
