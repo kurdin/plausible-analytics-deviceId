@@ -35,6 +35,9 @@ config :ex_money, api_module: Plausible.ExchangeRateMock
 
 config :plausible, Plausible.Ingestion.Counters, enabled: false
 
+# the sandboxed test Repo isn't available to the boot-time recorder
+config :plausible, Plausible.Ingestion.PersistentId, record_periods: false
+
 config :plausible, Oban, testing: :manual
 
 config :plausible, Plausible.InstallationSupport.Checks.FetchBody,

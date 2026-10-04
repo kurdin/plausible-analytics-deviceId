@@ -61,6 +61,12 @@ export const getMetricLabel = (
       return 'Total visitors'
     case 'exit_rate':
       return 'Exit rate'
+    case 'dau':
+      return 'Daily active users'
+    case 'wau':
+      return 'Weekly active users'
+    case 'mau':
+      return 'Monthly active users'
   }
 }
 

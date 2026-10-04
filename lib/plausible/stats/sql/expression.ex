@@ -345,6 +345,17 @@ defmodule Plausible.Stats.SQL.Expression do
     })
   end
 
+  # Per-day unique users state, merged into rolling windows by
+  # Plausible.Stats.SQL.ActiveUsers. Internal only, not a public metric.
+  def event_metric(:user_id_state, _query) do
+    wrap_alias([e], %{
+      user_id_state: fragment("uniqState(?)", e.user_id)
+    })
+  end
+
+  # Computed by Plausible.Stats.SQL.ActiveUsers
+  def event_metric(metric, _query) when metric in [:dau, :wau, :mau], do: %{}
+
   def event_metric(:percentage, _query), do: %{}
   def event_metric(:conversion_rate, _query), do: %{}
   def event_metric(:scroll_depth, _query), do: %{}
@@ -499,6 +510,7 @@ defmodule Plausible.Stats.SQL.Expression do
     })
   end
 
+  def session_metric(metric, _query) when metric in [:dau, :wau, :mau], do: %{}
   def session_metric(:percentage, _query), do: %{}
   def session_metric(:conversion_rate, _query), do: %{}
   def session_metric(:group_conversion_rate, _query), do: %{}

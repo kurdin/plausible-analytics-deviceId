@@ -44,6 +44,7 @@ defmodule Plausible.Stats.QueryBuilder do
       query =
         query
         |> set_time_on_page_data(site)
+        |> set_active_users_coverage()
         |> put_comparison_utc_time_range()
         |> Query.put_imported_opts(site)
 
@@ -154,6 +155,40 @@ defmodule Plausible.Stats.QueryBuilder do
         cutoff_date: site.legacy_time_on_page_cutoff
       }
     )
+  end
+
+  @doc """
+  For dau/wau/mau queries, records per metric whether all days its windows
+  look at had persistent (non-rotating) visitor ids. Used for the
+  `persistent_tracking_partial` metric warning.
+  """
+  def set_active_users_coverage(%Query{} = query) do
+    if Plausible.Stats.SQL.ActiveUsers.active_users_query?(query) do
+      periods = Plausible.Ingestion.PersistentId.Periods.list()
+      date_range = Query.date_range(query, trim_trailing: true)
+
+      window_end =
+        Enum.min([query.utc_time_range.last, query.now], DateTime)
+
+      coverage =
+        Map.new(query.metrics, fn metric ->
+          window_days = Plausible.Stats.SQL.ActiveUsers.window_days(metric)
+
+          first_day = Date.add(date_range.first, -(window_days - 1))
+
+          # DateTimeRange.new! handles local midnights that fall into a DST gap
+          window_start =
+            DateTimeRange.new!(first_day, first_day, query.timezone).first
+            |> DateTime.shift_zone!("Etc/UTC")
+
+          {metric,
+           Plausible.Ingestion.PersistentId.Periods.coverage(periods, window_start, window_end)}
+        end)
+
+      struct!(query, active_users_coverage: coverage)
+    else
+      query
+    end
   end
 
   def put_comparison_utc_time_range(%Query{include: %{compare: nil}} = query), do: query
@@ -518,6 +553,40 @@ defmodule Plausible.Stats.QueryBuilder do
            message:
              "Metric `#{metric}` can only be queried with event:page filters or dimensions."
          }}
+    end
+  end
+
+  @active_user_dimensions ["time:day", "time:week", "time:month"]
+
+  defp validate_metric(metric, query) when metric in [:dau, :wau, :mau] do
+    active_user_metrics = Plausible.Stats.SQL.ActiveUsers.metrics()
+
+    cond do
+      Enum.any?(query.metrics, &(&1 not in active_user_metrics)) ->
+        {:error,
+         %QueryError{
+           code: :invalid_metrics,
+           message:
+             "Metrics `dau`, `wau` and `mau` cannot be queried together with other metrics."
+         }}
+
+      Enum.any?(query.dimensions, &(&1 not in @active_user_dimensions)) ->
+        {:error,
+         %QueryError{
+           code: :invalid_metrics,
+           message:
+             "Metric `#{metric}` can only be queried without dimensions or with a `time:day`, `time:week` or `time:month` dimension."
+         }}
+
+      query.input_date_range in [:realtime, :realtime_30m] ->
+        {:error,
+         %QueryError{
+           code: :invalid_metrics,
+           message: "Metric `#{metric}` is not available for realtime date ranges."
+         }}
+
+      true ->
+        :ok
     end
   end
 

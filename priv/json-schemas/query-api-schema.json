@@ -238,6 +238,18 @@
         {
           "const": "scroll_depth",
           "markdownDescription": "Average page scroll depth. Requires: `event:page` filter or `event:page` dimension"
+        },
+        {
+          "const": "dau",
+          "markdownDescription": "Daily active users: unique visitors on the day. Without a time dimension, the value on the last day of the date range. Can't be combined with other metrics; allowed dimensions: none, `time:day`, `time:week`, `time:month` (value on the bucket's last day). Accurate across days only with persistent tracking (`ENABLE_PERSISTENT_TRACKING`)."
+        },
+        {
+          "const": "wau",
+          "markdownDescription": "Weekly active users: unique visitors in the 7 days ending on the day (rolling). Same rules as `dau`."
+        },
+        {
+          "const": "mau",
+          "markdownDescription": "Monthly active users: unique visitors in the 30 days ending on the day (rolling). Same rules as `dau`."
         }
       ]
     },

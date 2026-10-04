@@ -23,6 +23,7 @@ import { MainGraphResponse } from '../stats/graph/fetch-main-graph'
 
 export type StatsReportId =
   | 'top-stats'
+  | 'active-users'
   | 'main-graph'
   | NonTimeDimension
   | `${NonTimeDimension},${NonTimeDimension}`

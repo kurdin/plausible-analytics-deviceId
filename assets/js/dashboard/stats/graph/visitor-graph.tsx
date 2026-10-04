@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import * as storage from '../../util/storage'
 import TopStats from './top-stats'
-import { useTopStatsQuery } from './fetch-top-stats'
+import { isGraphableMetric, useTopStatsQuery } from './fetch-top-stats'
 import { useMainGraphQuery } from './fetch-main-graph'
 import { PlausibleSite, useSiteContext } from '../../site-context'
 import { Metric } from '../metrics'
@@ -57,7 +57,8 @@ export default function VisitorGraph({
       setSelectedMetric((currentlySelectedMetric) => {
         if (
           currentlySelectedMetric &&
-          availableMetrics.includes(currentlySelectedMetric)
+          availableMetrics.includes(currentlySelectedMetric) &&
+          isGraphableMetric(currentlySelectedMetric, selectedInterval)
         ) {
           return currentlySelectedMetric
         } else {
@@ -65,7 +66,7 @@ export default function VisitorGraph({
         }
       })
     }
-  }, [topStatsApiState.data])
+  }, [topStatsApiState.data, selectedInterval])
 
   // sync import related info
   useEffect(() => {
@@ -126,6 +127,7 @@ export default function VisitorGraph({
               selectedMetric={selectedMetric}
               onMetricClick={onMetricClick}
               tooltipBoundary={topStatsBoundary.current}
+              selectedInterval={selectedInterval}
             />
           ) : (
             // prevent the top stats area from jumping on initial load

@@ -27,7 +27,9 @@ defmodule Plausible.Stats.Imported do
   filter or the corresponding goal filter (see Plausible.Event.SystemEvents).
   """
   def schema_supports_query?(query) do
-    Imported.Base.decide_tables(query) != []
+    # Rolling active users need per-user data, which imports don't have
+    not Plausible.Stats.SQL.ActiveUsers.active_users_query?(query) and
+      Imported.Base.decide_tables(query) != []
   end
 
   def schema_supports_interval?(query) do
@@ -362,6 +364,9 @@ defmodule Plausible.Stats.Imported do
   end
 
   @cannot_optimize_metrics [
+    :dau,
+    :wau,
+    :mau,
     :exit_rate,
     :scroll_depth,
     :percentage,

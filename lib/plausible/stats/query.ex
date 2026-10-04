@@ -29,6 +29,8 @@ defmodule Plausible.Stats.Query do
             site_native_stats_start_at: nil,
             # Contains information to determine how to combine legacy and new time on page metrics
             time_on_page_data: %{},
+            # dau/wau/mau: per metric, whether its windows lie within persistent tracking periods
+            active_users_coverage: %{},
             sql_join_type: :left,
             smear_session_metrics: false
 

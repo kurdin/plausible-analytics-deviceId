@@ -60,6 +60,7 @@ describe('parseSiteFromDataset', () => {
     embedded: false,
     background: undefined,
     isDbip: false,
+    persistentTracking: false,
     flags: {},
     shared: false,
     isConsolidatedView: false,

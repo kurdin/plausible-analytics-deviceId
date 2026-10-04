@@ -16,6 +16,38 @@ import {
 } from '../../util/filters'
 import { StatsReportQueryKey, useQueryApi } from '../../hooks/use-query-api'
 import { useDashboardStateContext } from '../../dashboard-state-context'
+import { Interval } from './intervals'
+import { useMemo } from 'react'
+import { UseQueryResult } from '@tanstack/react-query'
+
+/**
+ * Rolling active users (persistent tracking only). They are fetched with a
+ * separate query because the API doesn't allow combining them with other
+ * metrics, and they don't support imported data (which would otherwise turn
+ * off imports for all the other top stats).
+ */
+export const ACTIVE_USER_METRICS: Metric[] = ['dau', 'wau', 'mau']
+
+const ACTIVE_USER_GRAPH_INTERVALS: string[] = [
+  Interval.day,
+  Interval.week,
+  Interval.month
+]
+
+export function isActiveUserMetric(metric: Metric): boolean {
+  return ACTIVE_USER_METRICS.includes(metric)
+}
+
+/** Active user metrics have no hourly or per-minute values. */
+export function isGraphableMetric(
+  metric: Metric,
+  interval: string | undefined
+): boolean {
+  return (
+    !isActiveUserMetric(metric) ||
+    (!!interval && ACTIVE_USER_GRAPH_INTERVALS.includes(interval))
+  )
+}
 
 export function useTopStatsQuery() {
   const site = useSiteContext()
@@ -39,7 +71,98 @@ export function useTopStatsQuery() {
     { getStatsQuery: getTopStatsQuery }
   )
 
-  return { apiState, isRealtimeSilentUpdate }
+  const activeUsersEnabled =
+    site.persistentTracking && !isRealTimeDashboard(dashboardState)
+
+  const activeUsersQueryKey: StatsReportQueryKey = [
+    'active-users',
+    {
+      dashboardState,
+      reportParams: {
+        metrics: ACTIVE_USER_METRICS,
+        dimensions: [],
+        include: {}
+      }
+    }
+  ]
+
+  const { apiState: activeUsersApiState } = useQueryApi(
+    site,
+    activeUsersQueryKey,
+    { getStatsQuery: getTopStatsQuery, enabled: activeUsersEnabled }
+  )
+
+  const mergedApiState = useMemo(
+    () =>
+      activeUsersEnabled
+        ? mergeActiveUsers(apiState, activeUsersApiState)
+        : apiState,
+    [activeUsersEnabled, apiState, activeUsersApiState]
+  )
+
+  return { apiState: mergedApiState, isRealtimeSilentUpdate }
+}
+
+/**
+ * Appends the active user metrics to the regular top stats response, so they
+ * render as extra tiles. If the active users query failed or is still
+ * loading, the regular tiles are shown without them.
+ */
+export function mergeActiveUsers(
+  apiState: UseQueryResult<api.QueryApiResponse>,
+  activeUsersApiState: UseQueryResult<api.QueryApiResponse>
+): UseQueryResult<api.QueryApiResponse> {
+  const main = apiState.data
+  const activeUsers = activeUsersApiState.data
+
+  if (!main || !activeUsers || !main.results[0] || !activeUsers.results[0]) {
+    return apiState
+  }
+
+  const mainRow = main.results[0]
+  const activeUsersRow = activeUsers.results[0]
+
+  const comparison =
+    mainRow.comparison && activeUsersRow.comparison
+      ? {
+          metrics: [
+            ...mainRow.comparison.metrics,
+            ...activeUsersRow.comparison.metrics
+          ],
+          change: [
+            ...mainRow.comparison.change,
+            ...activeUsersRow.comparison.change
+          ]
+        }
+      : mainRow.comparison
+
+  const data: api.QueryApiResponse = {
+    ...main,
+    query: {
+      ...main.query,
+      metrics: [...main.query.metrics, ...activeUsers.query.metrics]
+    },
+    meta: {
+      ...main.meta,
+      metric_warnings: {
+        ...(main.meta.metric_warnings ?? {}),
+        ...(activeUsers.meta.metric_warnings ?? {})
+      }
+    },
+    results: [
+      {
+        ...mainRow,
+        metrics: [...mainRow.metrics, ...activeUsersRow.metrics],
+        comparison
+      }
+    ]
+  }
+
+  return {
+    ...apiState,
+    data,
+    isFetching: apiState.isFetching || activeUsersApiState.isFetching
+  } as UseQueryResult<api.QueryApiResponse>
 }
 
 export function getTopStatsQuery(queryKey: StatsReportQueryKey): StatsQuery {
@@ -120,7 +243,10 @@ type TopStatItem = {
   comparisonValue?: number
 }
 
-export function formatTopStatsData(topStatsResponse: api.QueryApiResponse) {
+export function formatTopStatsData(
+  topStatsResponse: api.QueryApiResponse,
+  { selectedInterval }: { selectedInterval?: string } = {}
+) {
   const { query, meta, results, extraContext } = topStatsResponse
 
   const topStats: TopStatItem[] = []
@@ -131,7 +257,7 @@ export function formatTopStatsData(topStatsResponse: api.QueryApiResponse) {
       metric: metricKey,
       value: results[0].metrics[i],
       name: getTopStatMetricLabel(metricKey, extraContext),
-      graphable: true,
+      graphable: isGraphableMetric(metricKey, selectedInterval),
       change: results[0].comparison?.change[i],
       comparisonValue: results[0].comparison?.metrics[i]
     })

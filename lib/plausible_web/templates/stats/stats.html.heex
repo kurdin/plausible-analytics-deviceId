@@ -38,6 +38,7 @@
     data-embedded={to_string(@conn.assigns[:embedded])}
     data-background={@conn.assigns[:background]}
     data-is-dbip={to_string(@dbip?)}
+    data-persistent-tracking={to_string(@persistent_tracking?)}
     data-current-user-role={@site_role}
     data-current-user-id={
       if user = @conn.assigns[:current_user], do: user.id, else: Jason.encode!(nil)

@@ -23,7 +23,11 @@ defmodule Plausible.Stats.Metrics do
                  :group_conversion_rate,
                  :time_on_page,
                  :percentage,
-                 :scroll_depth
+                 :scroll_depth,
+                 # rolling active users, see Plausible.Stats.SQL.ActiveUsers
+                 :dau,
+                 :wau,
+                 :mau
                ] ++ @revenue_metrics
 
   @metric_mappings Enum.into(@all_metrics, %{}, fn metric -> {to_string(metric), metric} end)

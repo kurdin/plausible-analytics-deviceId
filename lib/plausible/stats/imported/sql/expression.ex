@@ -454,7 +454,7 @@ defmodule Plausible.Stats.Imported.SQL.Expression do
 
   # Ignored as it's calculated separately
   defp joined_metric(metric, _query)
-       when metric in [:conversion_rate, :group_conversion_rate, :percentage] do
+       when metric in [:conversion_rate, :group_conversion_rate, :percentage, :dau, :wau, :mau] do
     %{}
   end
 

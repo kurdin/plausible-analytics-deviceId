@@ -15,6 +15,18 @@ defmodule Plausible.Stats.SQL.QueryBuilder do
   require Plausible.Stats.SQL.Expression
 
   def build(query, site) do
+    if SQL.ActiveUsers.active_users_query?(query) do
+      query
+      |> SQL.ActiveUsers.build(site)
+      |> build_order_by(query)
+      |> paginate(query.pagination)
+      |> select_total_rows(query.include.total_rows)
+    else
+      build_regular(query, site)
+    end
+  end
+
+  defp build_regular(query, site) do
     query
     |> QueryOptimizer.split()
     |> Enum.map(fn {table_type, table_query} ->

@@ -41,6 +41,7 @@ defmodule Plausible.Application do
         {Plausible.Auth.TOTP.Vault, key: totp_vault_key()},
         {Plausible.Auth.TOTP.FallbackVault, key: totp_fallback_vault_key()},
         Plausible.Repo,
+        persistent_tracking_period_recorder(),
         Plausible.ClickhouseRepo,
         Plausible.IngestRepo,
         Plausible.AsyncInsertRepo,
@@ -430,6 +431,19 @@ defmodule Plausible.Application do
       else
         PlausibleWeb.Endpoint
       end
+    end
+  end
+
+  # Records when persistent tracking is switched on/off (used for active user
+  # metric warnings). Runs once after the Repo is up; failures are only logged.
+  defp persistent_tracking_period_recorder() do
+    config = Application.get_env(:plausible, Plausible.Ingestion.PersistentId, [])
+
+    if Keyword.get(config, :record_periods, true) do
+      Supervisor.child_spec(
+        {Task, fn -> Plausible.Ingestion.PersistentId.Periods.record_boot() end},
+        id: :persistent_tracking_period_recorder
+      )
     end
   end
 end

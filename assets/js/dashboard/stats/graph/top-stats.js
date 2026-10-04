@@ -28,7 +28,8 @@ export default function TopStats({
   data,
   selectedMetric,
   onMetricClick,
-  tooltipBoundary
+  tooltipBoundary,
+  selectedInterval
 }) {
   const { dashboardState } = useDashboardStateContext()
   const lastLoadTimestamp = useLastLoadContext()
@@ -43,7 +44,7 @@ export default function TopStats({
     comparingTo,
     timeRange,
     comparisonTimeRange
-  } = formatTopStatsData(data)
+  } = formatTopStatsData(data, { selectedInterval })
 
   const isComparison =
     (dashboardState.comparison && comparingFrom !== null) || false
@@ -104,6 +105,10 @@ export default function TopStats({
 
     if (metric === 'time_on_page') {
       return warning.message
+    }
+
+    if (warning.code === 'persistent_tracking_partial') {
+      return 'Overestimated: includes days before persistent tracking'
     }
 
     return null

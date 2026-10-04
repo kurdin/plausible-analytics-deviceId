@@ -14,7 +14,10 @@ export type Metric =
   | "time_on_page"
   | "total_revenue"
   | "average_revenue"
-  | "scroll_depth";
+  | "scroll_depth"
+  | "dau"
+  | "wau"
+  | "mau";
 export type DateRangeShorthand =
   | "all"
   | "day"

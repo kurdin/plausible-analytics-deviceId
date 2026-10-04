@@ -180,6 +180,22 @@ persistent_tracking_device_id_prop =
     prop -> prop
   end
 
+persistent_tracking_since =
+  case get_var_from_path_or_env(config_dir, "PERSISTENT_TRACKING_SINCE") do
+    nil ->
+      nil
+
+    value ->
+      case Date.from_iso8601(String.trim(value)) do
+        {:ok, date} ->
+          date
+
+        {:error, _} ->
+          raise ArgumentError,
+                "PERSISTENT_TRACKING_SINCE must be a date like 2026-10-05, got: #{inspect(value)}"
+      end
+  end
+
 if persistent_tracking_enabled? and
      (is_nil(persistent_salt_secret) or byte_size(persistent_salt_secret) < 16) do
   raise ArgumentError, """
@@ -753,7 +769,8 @@ config :plausible, Plausible.Ingestion.Persistor.Remote,
 config :plausible, Plausible.Ingestion.PersistentId,
   enabled: persistent_tracking_enabled?,
   secret: persistent_salt_secret,
-  device_id_prop: persistent_tracking_device_id_prop
+  device_id_prop: persistent_tracking_device_id_prop,
+  since: persistent_tracking_since
 
 config :ex_money,
   open_exchange_rates_app_id: get_var_from_path_or_env(config_dir, "OPEN_EXCHANGE_RATES_APP_ID"),

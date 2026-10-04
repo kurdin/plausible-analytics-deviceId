@@ -26,6 +26,7 @@ export function parseSiteFromDataset(dataset: DOMStringMap): PlausibleSite {
     embedded: dataset.embedded === 'true',
     background: dataset.background,
     isDbip: dataset.isDbip === 'true',
+    persistentTracking: dataset.persistentTracking === 'true',
     flags: JSON.parse(dataset.flags!),
     shared: !!dataset.sharedLinkAuth,
     isConsolidatedView: dataset.isConsolidatedView === 'true',
@@ -61,6 +62,8 @@ export const siteContextDefaultValue = {
   embedded: false,
   background: undefined as string | undefined,
   isDbip: false,
+  /** ENABLE_PERSISTENT_TRACKING is on: show daily/weekly/monthly active users */
+  persistentTracking: false,
   flags: {} as FeatureFlags,
   shared: false,
   isConsolidatedView: false,

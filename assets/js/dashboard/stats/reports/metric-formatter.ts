@@ -24,6 +24,9 @@ export const MetricFormatterShort: Record<
   views_per_visit: numberShortFormatter,
   visitors: numberShortFormatter,
   visits: numberShortFormatter,
+  dau: numberShortFormatter,
+  wau: numberShortFormatter,
+  mau: numberShortFormatter,
 
   conversions: numberShortFormatter,
 
@@ -52,6 +55,9 @@ export const MetricFormatterLong: Record<
   views_per_visit: numberLongFormatter,
   visitors: numberLongFormatter,
   visits: numberLongFormatter,
+  dau: numberLongFormatter,
+  wau: numberLongFormatter,
+  mau: numberLongFormatter,
 
   conversions: numberLongFormatter,
 

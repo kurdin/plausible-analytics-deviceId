@@ -278,6 +278,30 @@ defmodule Plausible.Stats.QueryResult do
     end
   end
 
+  defp metric_warning(metric, %Query{} = query) when metric in [:dau, :wau, :mau] do
+    case query.active_users_coverage[metric] do
+      %{covered: false, since: since} ->
+        since_text =
+          if since do
+            " (enabled on " <>
+              (since |> DateTime.shift_zone!(query.timezone) |> Calendar.strftime("%Y-%m-%d")) <>
+              ")"
+          else
+            ""
+          end
+
+        %{
+          code: :persistent_tracking_partial,
+          message:
+            "Part of this period was tracked without persistent tracking#{since_text}. " <>
+              "Visitor ids rotated daily then, so active users are overestimated."
+        }
+
+      _ ->
+        nil
+    end
+  end
+
   defp metric_warning(:time_on_page, %Query{} = query) do
     case query.time_on_page_data do
       %{new_metric_visible: true, include_legacy_metric: true, cutoff: cutoff} ->
