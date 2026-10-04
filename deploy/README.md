@@ -94,9 +94,44 @@ event without it falls back to Tier 2, which produces a different id for the
 same browser. The prop is also stored as a regular custom property, so it
 shows up in the Properties report and is subject to the 30-prop limit.
 
+A device id helper (any stable id works: localStorage, a cookie, an app
+install id):
+
 ```js
-// npm @plausible-analytics/tracker or the site snippet's init() options
+function getOrCreateDeviceId() {
+  try {
+    let id = localStorage.getItem('deviceId')
+    if (!id) {
+      id = crypto.randomUUID()
+      localStorage.setItem('deviceId', id)
+    }
+    return id
+  } catch (e) {
+    return undefined
+  }
+}
+```
+
+**Site snippet.** The snippet from Site settings already calls
+`plausible.init()`. Add `customProperties` to that existing call rather than
+calling it a second time:
+
+```js
 plausible.init({
+  // ...options already in your snippet...
+  customProperties: { deviceId: getOrCreateDeviceId() }
+})
+```
+
+**npm package** (`@plausible-analytics/tracker`). `domain` is required.
+Without `endpoint`, events go to plausible.io, so point it at your instance:
+
+```js
+import { init } from '@plausible-analytics/tracker'
+
+init({
+  domain: 'example.com', // as configured in your Plausible site settings
+  endpoint: 'https://plausible.example.com/api/event', // your instance
   customProperties: { deviceId: getOrCreateDeviceId() }
 })
 ```
@@ -107,6 +142,23 @@ upstream Plausible's privacy model, so check your GDPR/ePrivacy obligations
 before enabling them.
 
 ## Running
+
+Docker Compose v2.24.4 or newer is needed (`docker compose version`). On
+**arm64** servers the bundled `mail` relay (`bytemark/smtp`, amd64-only)
+doesn't run. Point the `SMTP_*` variables in `plausible-conf.env` at a real
+SMTP server, and remove the relay together with plausible's dependency on it
+in a `docker-compose.override.yml`:
+
+```yaml
+services:
+  mail: !reset null
+  plausible:
+    depends_on: !override
+      plausible_db:
+        condition: service_healthy
+      plausible_events_db:
+        condition: service_healthy
+```
 
 For a full install / upgrade / rollback guide (including migrating an old
 v2.0 Docker install without data loss), see
