@@ -4,8 +4,12 @@
 #   cp plausible-conf.env.example plausible-conf.env   # then edit it
 #   docker compose up -d --build
 #
-# Service and volume names match plausible/community-edition, so existing
-# CE data volumes can be reused.
+# Service and volume names match plausible/community-edition. Volume names
+# are prefixed with the Compose project name (the directory name by
+# default), so to reuse an existing CE install's volumes set
+# COMPOSE_PROJECT_NAME=<old project> in .env, and POSTGRES_VERSION=14 if its
+# Postgres volume was created with 14. For upgrading an existing install see
+# deployment.md in kurdin/community-edition.
 services:
   mail:
     image: bytemark/smtp
@@ -19,7 +23,11 @@ services:
     environment:
       - POSTGRES_PASSWORD=postgres
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      # TCP check, so it isn't "ready" during first-time initdb (socket only)
+      test: ["CMD-SHELL", "pg_isready -U postgres -h 127.0.0.1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
       start_period: 1m
 
   plausible_events_db:
@@ -31,8 +39,9 @@ services:
       - ./deploy/clickhouse/logs.xml:/etc/clickhouse-server/config.d/logs.xml:ro
       - ./deploy/clickhouse/ipv4-only.xml:/etc/clickhouse-server/config.d/ipv4-only.xml:ro
       - ./deploy/clickhouse/default-profile-logs.xml:/etc/clickhouse-server/users.d/logs.xml:ro
-      # Uncomment on small servers (< 4GB RAM):
+      # Uncomment both lines on small servers (< 4GB RAM):
       # - ./deploy/clickhouse/low-resources.xml:/etc/clickhouse-server/config.d/low-resources.xml:ro
+      # - ./deploy/clickhouse/default-profile-low-resources-overrides.xml:/etc/clickhouse-server/users.d/default-profile-low-resources-overrides.xml:ro
     ulimits:
       nofile:
         soft: 262144
@@ -41,6 +50,10 @@ services:
       - CLICKHOUSE_SKIP_USER_SETUP=1
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 -O - http://127.0.0.1:8123/ping || exit 1"]
+      interval: 10s
+      timeout: 5s
+      # generous: after a version upgrade ClickHouse may need minutes to load parts
+      retries: 60
       start_period: 1m
 
   plausible:

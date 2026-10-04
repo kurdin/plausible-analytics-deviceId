@@ -73,9 +73,10 @@ docker compose up -d --build
 ```
 
 The compose file uses the same service and volume names as
-`plausible/community-edition`, so existing data volumes can be reused. Volumes
-created with Postgres 14 need `POSTGRES_VERSION=14`, or a dump/restore before
-upgrading.
+`plausible/community-edition`. Volume names are prefixed with the Compose
+project name, which is the directory name by default. To reuse an existing
+install's volumes, set `COMPOSE_PROJECT_NAME=<old project>` in `.env`, and
+`POSTGRES_VERSION=14` if its Postgres volume was created with 14.
 
 ## Verifying
 
@@ -90,7 +91,8 @@ for ip in 1.1.1.1 2.2.2.2; do
     -d '{"name":"pageview","url":"http://example.com/","domain":"example.com","props":{"deviceId":"dev-123"}}'
 done
 
-# 2. Both events share one user_id
+# 2. Both events share one user_id (events are flushed to ClickHouse every ~5s)
+sleep 6
 docker compose exec plausible_events_db clickhouse-client -q \
   "SELECT user_id, count() FROM plausible_events_db.events_v2 GROUP BY user_id"
 

@@ -104,6 +104,19 @@ defmodule Plausible.Ingestion.PersistentIdTest do
       assert is_integer(PersistentId.generate(1, request(user_agent: nil)))
     end
 
+    test "field boundaries are unambiguous" do
+      # naive concatenation would make these identical
+      a = request(remote_ip: "1.2.3.45", user_agent: "Mozilla/5.0")
+      b = request(remote_ip: "5.1.2.3.45", user_agent: "Mozilla/5.0 ")
+      c = request(remote_ip: "", user_agent: "Mozilla/5.01.2.3.45")
+
+      ids = Enum.map([a, b, c], &PersistentId.generate(1, &1))
+      assert ids == Enum.uniq(ids)
+
+      assert PersistentId.generate(1, request(props: %{"deviceId" => "1:x"})) !=
+               PersistentId.generate(11, request(props: %{"deviceId" => "x"}))
+    end
+
     test "ids are scoped per site" do
       req = request(props: %{"deviceId" => "abc"})
       assert PersistentId.generate(1, req) != PersistentId.generate(2, req)
