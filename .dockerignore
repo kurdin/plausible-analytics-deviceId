@@ -72,3 +72,9 @@ npm-debug.log
 # Docker volumes
 .clickhouse_db_vol*
 plausible_db*
+
+# Self-hosting deployment files, not needed in the image
+/plausible-conf.env
+/plausible-conf.env.example
+/docker-compose.yml
+/deploy/

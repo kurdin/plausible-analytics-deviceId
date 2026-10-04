@@ -7,6 +7,7 @@ defmodule Plausible.Ingestion.Event do
   """
   use Plausible
   alias Plausible.Ingestion.Request
+  alias Plausible.Ingestion.PersistentId
   alias Plausible.ClickhouseEventV2
   alias Plausible.Site.GateKeeper
 
@@ -398,6 +399,14 @@ defmodule Plausible.Ingestion.Event do
   end
 
   defp put_user_id(%__MODULE__{} = event, _context) do
+    if PersistentId.enabled?() do
+      update_event_attrs(event, %{user_id: PersistentId.generate(event.site.id, event.request)})
+    else
+      put_daily_salted_user_id(event)
+    end
+  end
+
+  defp put_daily_salted_user_id(%__MODULE__{} = event) do
     update_event_attrs(event, %{
       user_id:
         generate_user_id(
@@ -427,13 +436,18 @@ defmodule Plausible.Ingestion.Event do
   defp register_session(%__MODULE__{} = event, context) do
     persistor_opts = Keyword.get(context, :persistor_opts, [])
 
+    # Persistent ids don't rotate, so the previous id is the current one.
     previous_user_id =
-      generate_user_id(
-        event.request,
-        event.domain,
-        event.clickhouse_event.hostname,
-        event.salts.previous
-      )
+      if PersistentId.enabled?() do
+        event.clickhouse_event.user_id
+      else
+        generate_user_id(
+          event.request,
+          event.domain,
+          event.clickhouse_event.hostname,
+          event.salts.previous
+        )
+      end
 
     case Plausible.Ingestion.Persistor.persist_event(event, previous_user_id, persistor_opts) do
       {:ok, event} ->

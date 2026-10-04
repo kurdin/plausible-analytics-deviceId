@@ -164,6 +164,30 @@ persistor_count = get_int_from_path_or_env(config_dir, "PERSISTOR_COUNT", 200)
 
 persistor_timeout_ms = get_int_from_path_or_env(config_dir, "PERSISTOR_TIMEOUT_MS", 10_000)
 
+# Opt-in persistent visitor identification. When disabled (default), visitor
+# ids are derived from the daily rotating salt exactly as upstream does.
+persistent_tracking_enabled? =
+  get_bool_from_path_or_env(config_dir, "ENABLE_PERSISTENT_TRACKING", false)
+
+persistent_salt_secret = get_var_from_path_or_env(config_dir, "PERSISTENT_SALT_SECRET")
+
+persistent_tracking_device_id_prop =
+  config_dir
+  |> get_var_from_path_or_env("PERSISTENT_TRACKING_DEVICE_ID_PROP", "")
+  |> String.trim()
+  |> case do
+    "" -> "deviceId"
+    prop -> prop
+  end
+
+if persistent_tracking_enabled? and
+     (is_nil(persistent_salt_secret) or byte_size(persistent_salt_secret) < 16) do
+  raise ArgumentError, """
+  PERSISTENT_SALT_SECRET must be set to at least 16 bytes when ENABLE_PERSISTENT_TRACKING=true.
+  You can generate one with `openssl rand -base64 48`.
+  """
+end
+
 # Can be generated  with `Base.encode64(:crypto.strong_rand_bytes(32))` from
 # iex shell or `openssl rand -base64 32` from command line.
 totp_vault_key =
@@ -725,6 +749,11 @@ config :plausible, Plausible.Ingestion.Persistor.Remote,
   url: persistor_url,
   count: persistor_count,
   timeout_ms: persistor_timeout_ms
+
+config :plausible, Plausible.Ingestion.PersistentId,
+  enabled: persistent_tracking_enabled?,
+  secret: persistent_salt_secret,
+  device_id_prop: persistent_tracking_device_id_prop
 
 config :ex_money,
   open_exchange_rates_app_id: get_var_from_path_or_env(config_dir, "OPEN_EXCHANGE_RATES_APP_ID"),

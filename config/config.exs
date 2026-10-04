@@ -77,6 +77,11 @@ config :plausible, Plausible.Cache, enabled: true
 
 config :plausible, Plausible.Ingestion.Counters, enabled: true
 
+config :plausible, Plausible.Ingestion.PersistentId,
+  enabled: false,
+  secret: nil,
+  device_id_prop: "deviceId"
+
 config :ex_cldr,
   default_locale: "en",
   default_backend: Plausible.Cldr

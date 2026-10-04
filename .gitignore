@@ -99,3 +99,6 @@ plausible-report.xml
 plausible_db*
 
 .claude
+
+# Self-hosting config with secrets (see plausible-conf.env.example)
+/plausible-conf.env
