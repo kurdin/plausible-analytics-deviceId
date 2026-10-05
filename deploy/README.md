@@ -172,6 +172,9 @@ services:
 For a full install / upgrade / rollback guide (including migrating an old
 v2.0 Docker install without data loss), see
 [deployment.md in kurdin/community-edition](https://github.com/kurdin/community-edition/blob/plausible-kurdin/deployment.md).
+How unique visitors, `deviceId` and DAU/WAU/MAU work, and how to turn
+persistent tracking on or off:
+[PERSISTENT-TRACKING.md](https://github.com/kurdin/community-edition/blob/plausible-kurdin/PERSISTENT-TRACKING.md).
 To move an existing install step by step (copy, upgrade the copy, switch
 over), follow
 [MIGRATION-GUIDE.md](https://github.com/kurdin/community-edition/blob/plausible-kurdin/MIGRATION-GUIDE.md).
