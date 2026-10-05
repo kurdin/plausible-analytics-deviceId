@@ -171,7 +171,10 @@ services:
 
 For a full install / upgrade / rollback guide (including migrating an old
 v2.0 Docker install without data loss), see
-[deployment.md in kurdin/community-edition](https://github.com/kurdin/community-edition/blob/claude/determined-cerf-dqrxgj/deployment.md).
+[deployment.md in kurdin/community-edition](https://github.com/kurdin/community-edition/blob/plausible-kurdin/deployment.md).
+To move an existing install step by step (copy, upgrade the copy, switch
+over), follow
+[MIGRATION-GUIDE.md](https://github.com/kurdin/community-edition/blob/plausible-kurdin/MIGRATION-GUIDE.md).
 
 ```sh
 cp plausible-conf.env.example plausible-conf.env   # edit BASE_URL, secrets
