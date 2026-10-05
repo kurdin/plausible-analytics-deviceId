@@ -8,6 +8,10 @@ defmodule Plausible.IngestRepo.Migrations.EnsureWriteColumns do
   fails with "No such column ...", although the app answers 202.
   `ADD COLUMN IF NOT EXISTS` only changes metadata and is a no-op for tables
   that already have the column.
+
+  The same data migration recreated sessions_v2 without the minmax_timestamp
+  index (MinmaxIndexSessionTimestamp), so it's added and built here too when
+  missing. Without it, queries only read more data.
   """
   use Ecto.Migration
 
@@ -32,6 +36,29 @@ defmodule Plausible.IngestRepo.Migrations.EnsureWriteColumns do
   def up do
     add_missing("events_v2", @events_columns)
     add_missing("sessions_v2", @sessions_columns)
+
+    unless sessions_index_exists?() do
+      execute """
+      ALTER TABLE sessions_v2
+      #{on_cluster_statement("sessions_v2")}
+      ADD INDEX IF NOT EXISTS minmax_timestamp timestamp TYPE minmax GRANULARITY 1
+      """
+
+      execute """
+      ALTER TABLE sessions_v2
+      MATERIALIZE INDEX minmax_timestamp
+      """
+    end
+  end
+
+  defp sessions_index_exists?() do
+    %{rows: [[count]]} =
+      repo().query!("""
+      SELECT count() FROM system.data_skipping_indices
+      WHERE database = currentDatabase() AND table = 'sessions_v2' AND name = 'minmax_timestamp'
+      """)
+
+    count > 0
   end
 
   def down, do: :ok
