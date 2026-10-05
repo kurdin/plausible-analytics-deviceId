@@ -53,15 +53,16 @@ defmodule Plausible.Ingestion.PersistentId.Periods do
         # The unique index on open periods makes concurrent boots (several
         # nodes) insert at most one open period.
         Repo.insert!(%__MODULE__{started_at: now}, on_conflict: :nothing)
-        Logger.info("Persistent tracking enabled, recording period start at #{now}")
+        Logger.notice("Persistent tracking enabled, recording period start at #{now}")
         :started
 
       not PersistentId.enabled?() and open? ->
         Repo.update_all(open_periods(), set: [ended_at: now, updated_at: DateTime.to_naive(now)])
-        Logger.info("Persistent tracking disabled, recording period end at #{now}")
+        Logger.notice("Persistent tracking disabled, recording period end at #{now}")
         :ended
 
       true ->
+        if PersistentId.enabled?(), do: Logger.notice("Persistent tracking enabled")
         :unchanged
     end
   rescue
@@ -75,12 +76,12 @@ defmodule Plausible.Ingestion.PersistentId.Periods do
   defp record_since(since, now) do
     if PersistentId.enabled?() do
       Repo.insert!(%__MODULE__{started_at: since}, on_conflict: :nothing)
-      Logger.info("Persistent tracking enabled since #{since} (PERSISTENT_TRACKING_SINCE)")
+      Logger.notice("Persistent tracking enabled since #{since} (PERSISTENT_TRACKING_SINCE)")
       :started
     else
       Repo.insert!(%__MODULE__{started_at: since, ended_at: now})
 
-      Logger.info(
+      Logger.notice(
         "Persistent tracking disabled, recording the period since #{since} (PERSISTENT_TRACKING_SINCE) as ended at #{now}"
       )
 
